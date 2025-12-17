@@ -1,6 +1,5 @@
 """
 Autonomous Vehicle Client
-
 A client for connecting to and controlling an autonomous vehicle simulation,
 retrieving state data and camera images (raw and segmented).
 """
@@ -54,8 +53,7 @@ class AVClient:
 
     MAX_DGRAM = 2**16  # Maximum datagram size for socket operations
 
-    def __init__(self, host: str = '127.0.0.1', port: int = 11000,
-                 timeout: float = 5.0):
+    def __init__(self, host: str = '127.0.0.1', port: int = 11000, timeout: float = 5.0):
         """
         Initialize AV Client.
 
@@ -84,9 +82,7 @@ class AVClient:
             self.socket.connect((self.host, self.port))
             print(f"Connected to vehicle server at {self.host}:{self.port}")
         except socket.error as e:
-            raise ConnectionError(
-                f"Failed to connect to {self.host}:{self.port}: {e}"
-            )
+            raise ConnectionError(f"Failed to connect to {self.host}:{self.port}: {e}")
 
     def disconnect(self) -> None:
         """Close connection to vehicle server."""
@@ -163,9 +159,7 @@ class AVClient:
                     raise DataRetrievalError("Connection closed by server")
                 data += chunk
         except socket.error as e:
-            raise DataRetrievalError(
-                f"Socket error during data reception: {e}"
-            )
+            raise DataRetrievalError(f"Socket error during data reception: {e}")
 
         return data
 
@@ -183,26 +177,18 @@ class AVClient:
             raise DataRetrievalError("Not connected to server")
 
         try:
-            # Send state data request
-            self.socket.sendall(
-                self._create_command_json(CommandMode.STATE_DATA)
-            )
+            self.socket.sendall(self._create_command_json(CommandMode.STATE_DATA))
 
-            # Receive data length
             length_bytes = self.socket.recv(8)
             if len(length_bytes) != 8:
                 raise DataRetrievalError("Failed to receive data length")
 
             data_length = int.from_bytes(length_bytes, "big")
-
-            # Receive state data
             data = self._receive_data(data_length)
             return json.loads(data)
 
         except socket.timeout:
-            raise DataRetrievalError(
-                "Timeout waiting for state data from server"
-            )
+            raise DataRetrievalError("Timeout waiting for state data from server")
         except json.JSONDecodeError as e:
             raise DataRetrievalError(f"Invalid JSON response: {e}")
         except socket.error as e:
@@ -231,20 +217,15 @@ class AVClient:
         image_type = "raw" if mode == CommandMode.RAW_IMAGE else "segmented"
 
         try:
-            # Send image request
             self.socket.sendall(self._create_command_json(mode))
 
-            # Receive data length
             length_bytes = self.socket.recv(8)
             if len(length_bytes) != 8:
                 raise DataRetrievalError("Failed to receive data length")
 
             data_length = int.from_bytes(length_bytes, "big")
-
-            # Receive image data
             data = self._receive_data(data_length)
 
-            # Decode image
             image = cv2.imdecode(
                 np.frombuffer(data, np.uint8),
                 cv2.IMREAD_UNCHANGED
@@ -256,9 +237,7 @@ class AVClient:
             return image
 
         except socket.timeout:
-            raise DataRetrievalError(
-                f"Timeout waiting for {image_type} image from server"
-            )
+            raise DataRetrievalError(f"Timeout waiting for {image_type} image from server")
         except socket.error as e:
             raise DataRetrievalError(f"Socket error: {e}")
 
@@ -349,9 +328,7 @@ def calculate_steering_angle(
     STRAIGHT_DX_PX = 6
     STRAIGHT_FRAMES = 6
 
-    # ======================
     # INIT STATE
-    # ======================
     if not hasattr(calculate_steering_angle, "_prev_steer"):
         calculate_steering_angle._prev_steer = 0.0
         calculate_steering_angle._last_band = "mid"
@@ -365,18 +342,14 @@ def calculate_steering_angle(
     cx_img = w // 2
     vis = segmented_image.copy()
 
-    # ======================
     # MASK
-    # ======================
     mask = cv2.inRange(segmented_image, LOWER, UPPER)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
 
     cv2.line(vis, (cx_img, 0), (cx_img, h), (0, 255, 0), 2)
 
-    # ======================
     # MULTI-BAND
-    # ======================
     bands = {
         "near": (int(h * 0.65), int(h * 0.80)),
         "mid":  (int(h * 0.45), int(h * 0.65)),
@@ -395,9 +368,7 @@ def calculate_steering_angle(
     if not candidates:
         return int(round(prev_steer)), vis
 
-    # ======================
     # BAND SELECTION
-    # ======================
     if last_band in candidates:
         target_band = last_band
     else:
@@ -409,16 +380,12 @@ def calculate_steering_angle(
     calculate_steering_angle._last_band = target_band
     cx, cy, m00 = candidates[target_band]
 
-    # ======================
     # GEOMETRY (MID)
-    # ======================
     dx = cx - cx_img
     dy = max(h - cy, 1)
     heading_deg = np.degrees(np.arctan2(dx, dy))
 
-    # ======================
     # FAR LOOKAHEAD (FORK AWARENESS)
-    # ======================
     far_heading = 0.0
     if "far" in candidates:
         fx, fy, _ = candidates["far"]
@@ -426,9 +393,7 @@ def calculate_steering_angle(
 
     is_fork = abs(far_heading) > 5.0
 
-    # ======================
     # CONTEXT STATE
-    # ======================
     is_corner = abs(heading_deg) > 6 or abs(prev_steer) > 8
 
     if is_corner:
@@ -443,19 +408,12 @@ def calculate_steering_angle(
     else:
         calculate_steering_angle._straight_count = 0
 
-    # ======================
     # DEADZONE
-    # ======================
-    effective_deadzone = (
-        3.5 if calculate_steering_angle._corner_frames > 0
-        else HEADING_DEADZONE_DEG
-    )
+    effective_deadzone = 3.5 if calculate_steering_angle._corner_frames > 0 else HEADING_DEADZONE_DEG
     if abs(heading_deg) < effective_deadzone:
         heading_deg = 0.0
 
-    # ======================
     # GAIN
-    # ======================
     if speed_cmd <= 15:
         k = 0.6
     elif speed_cmd <= 25:
@@ -465,14 +423,10 @@ def calculate_steering_angle(
 
     steer_raw = np.clip(k * heading_deg, -MAX_ANGLE, MAX_ANGLE)
 
-    # ======================
     # EMA
-    # ======================
     steer_ema = EMA_ALPHA * steer_raw + (1 - EMA_ALPHA) * prev_steer
 
-    # ======================
     # RATE LIMIT
-    # ======================
     max_delta = 1.0 if speed_cmd >= 26 else 2.0
     steer_final = np.clip(
         steer_ema,
@@ -480,45 +434,30 @@ def calculate_steering_angle(
         prev_steer + max_delta
     )
 
-    # ======================
     # POST-CORNER DAMPING
-    # ======================
     if calculate_steering_angle._corner_frames > 0:
         steer_final *= 0.85
 
     steer_final = np.clip(steer_final, -MAX_ANGLE, MAX_ANGLE)
 
-    # ======================
     # STRAIGHT LOCK (MAP 2 SAFE)
-    # ======================
-    if (calculate_steering_angle._straight_count >= STRAIGHT_FRAMES
-            and not is_fork):
+    if calculate_steering_angle._straight_count >= STRAIGHT_FRAMES and not is_fork:
         steer_final = np.clip(steer_final, -1.5, 1.5)
 
-    # ======================
     # UPDATE STATE
-    # ======================
     calculate_steering_angle._prev_steer = steer_final
     steer_int = int(round(steer_final))
 
-    # ======================
     # DEBUG
-    # ======================
     cv2.circle(vis, (cx, cy), 7, (0, 0, 255), -1)
     cv2.arrowedLine(vis, (cx_img, h - 5), (cx, cy), (0, 255, 255), 2)
 
-    cv2.putText(
-        vis, f"Angle: {steer_int:+d} (raw {steer_raw:+.1f})",
-        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2
-    )
-    cv2.putText(
-        vis, f"Heading: {heading_deg:+.1f} deg",
-        (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2
-    )
-    cv2.putText(
-        vis, f"Target: {target_band}  m00={int(m00)}",
-        (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2
-    )
+    cv2.putText(vis, f"Angle: {steer_int:+d} (raw {steer_raw:+.1f})",
+                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+    cv2.putText(vis, f"Heading: {heading_deg:+.1f} deg",
+                (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    cv2.putText(vis, f"Target: {target_band}  m00={int(m00)}",
+                (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
     return steer_int, vis
 
@@ -527,7 +466,6 @@ def detect_fork(segmented_image):
     h, w = segmented_image.shape[:2]
     cx = w // 2
 
-    # dùng MID band (ổn định hơn)
     y1 = int(h * 0.40)
     y2 = int(h * 0.60)
 
@@ -540,7 +478,7 @@ def detect_fork(segmented_image):
     band = mask[y1:y2, :]
     m = cv2.moments(band, binaryImage=True)
 
-    if m["m00"] < 1200:   # nới ngưỡng
+    if m["m00"] < 1200:
         return False, 0.0
 
     fx = int(m["m10"] / m["m00"])
@@ -557,9 +495,10 @@ def detect_sign(segmented_image: np.ndarray) -> str:
     Detect traffic sign using semantic segmented image.
     Detect LEFT / RIGHT / STRAIGHT
     """
+
     h, w = segmented_image.shape[:2]
 
-    # ROI phía trước – bên phải
+    # ROI
     x1 = int(w * 0.60)
     x2 = int(w * 0.95)
     y1 = int(h * 0.25)
@@ -567,21 +506,17 @@ def detect_sign(segmented_image: np.ndarray) -> str:
 
     roi = segmented_image[y1:y2, x1:x2]
 
-    # ===== COLOR DEFINITIONS (BGR) =====
+    # COLOR DEFINITIONS (BGR)
+    LEFT_LO = np.array([200, 200, 0], np.uint8)
+    LEFT_HI = np.array([255, 255, 80], np.uint8)
 
-    # LEFT sign (cyan)
-    LEFT_LO = np.array([200, 200,   0], np.uint8)
-    LEFT_HI = np.array([255, 255,  80], np.uint8)
+    STRAIGHT_LO = np.array([200, 0, 200], np.uint8)
+    STRAIGHT_HI = np.array([255, 80, 255], np.uint8)
 
-    # STRAIGHT sign (purple)
-    STRAIGHT_LO = np.array([200,   0, 200], np.uint8)
-    STRAIGHT_HI = np.array([255,  80, 255], np.uint8)
-
-    # RIGHT sign (light pink / light purple)
     RIGHT_LO = np.array([160, 160, 230], np.uint8)
     RIGHT_HI = np.array([210, 210, 255], np.uint8)
 
-    # ===== MASK =====
+    # MASK
     mask_left = cv2.inRange(roi, LEFT_LO, LEFT_HI)
     mask_straight = cv2.inRange(roi, STRAIGHT_LO, STRAIGHT_HI)
     mask_right = cv2.inRange(roi, RIGHT_LO, RIGHT_HI)
@@ -625,13 +560,12 @@ def lane_available(mask: np.ndarray, direction: str, h: int, w: int):
     return (area > 500), area
 
 
-def apply_turn_control(turn_intent, speed_cmd, steer_lane,
-                       fork_timer=None, auto=False):
+def apply_turn_control(turn_intent, speed_cmd, steer_lane, fork_timer=None, auto=False):
     MAX_ANGLE = 25
     STEER_POLARITY = -1
 
     if auto:
-        # AUTO-FORK (Map 1): vào cua sớm & mạnh
+        # AUTO-FORK (Map 1)
         if turn_intent == "LEFT":
             steer_cmd = STEER_POLARITY * (+14)
         elif turn_intent == "RIGHT":
@@ -642,7 +576,7 @@ def apply_turn_control(turn_intent, speed_cmd, steer_lane,
         speed_cmd = min(speed_cmd, 16)
         return speed_cmd, int(np.clip(steer_cmd, -MAX_ANGLE, MAX_ANGLE))
 
-    # ===== SIGN-BASED (Map 2): ramp mượt =====
+    # SIGN-BASED (Map 2)
     def ramp(timer_left, t_max):
         if timer_left is None:
             return 12
@@ -672,8 +606,7 @@ def apply_turn_control(turn_intent, speed_cmd, steer_lane,
 
 def is_near_intersection(segmented_image):
     h, w = segmented_image.shape[:2]
-    roi = segmented_image[int(h * 0.55):int(h * 0.75),
-                          int(w * 0.35):int(w * 0.65)]
+    roi = segmented_image[int(h * 0.55):int(h * 0.75), int(w * 0.35):int(w * 0.65)]
 
     purple_mask = cv2.inRange(
         roi,
@@ -689,7 +622,7 @@ def detect_fork_early(segmented_image):
     cx = w // 2
 
     y1 = int(h * 0.25)
-    y2 = int(h * 0.40)   # FAR band
+    y2 = int(h * 0.40)
 
     mask = cv2.inRange(
         segmented_image,
@@ -712,100 +645,79 @@ def detect_fork_early(segmented_image):
 
 def main():
     args = parse_arguments()
-    print(f"[CONFIG] Connecting to {args.host}:{args.port} "
-          f"(timeout: {args.timeout}s)")
+    print(f"[CONFIG] Connecting to {args.host}:{args.port} (timeout: {args.timeout}s)")
 
-    # =========================
     # FORK STATE MACHINE
-    # =========================
-    fork_state = "IDLE"          # IDLE | PREPARE | COMMIT
-    fork_intent = "NONE"         # NONE | LEFT | RIGHT
+    fork_state = "IDLE"
+    fork_intent = "NONE"
     fork_timer = 0
 
-    # sign hold
     sign_hold = 0
     SIGN_HOLD_FRAMES = 40
 
-    # PREPARE timing
     prepare_cnt = 0
     PREPARE_MIN = 8
     PREPARE_MAX = 80
 
-    # intersection hysteresis (still used for sign-based turns)
     inter_hold = 0
     inter_lost = 0
     INTER_HOLD_FRAMES = 28
     INTER_LOST_CANCEL = 6
 
-    # block logic
     LEFT_BLOCK_STEER = +2
     RIGHT_BLOCK_STEER = -6
 
-    # opening threshold
     LEFT_STRONG_AREA = 1100
     RIGHT_STRONG_AREA = 400
 
-    # geometry threshold
     FORK_LEFT_HEADING = -4.0
     FORK_RIGHT_HEADING = +0.5
 
     INTER_AREA_STRONG = 1800
     inter_seen = 0
 
-    # =========================
-    # STEP 1: AUTO-FORK (NO SIGN) - T junction detector
-    # =========================
     steer_hist = deque(maxlen=10)
 
-    # Ngã 3 detector bằng "straight đóng + 1/2 bên mở"
-    T_STRAIGHT_MAX = 380          # straight_area nhỏ => phía trước không còn lane
-    T_SIDE_MIN = 850              # trái/phải đủ mở
+    T_STRAIGHT_MAX = 380
+    T_SIDE_MIN = 850
+    T_SEEN_ON = 4
+    T_SEEN_OFF = 2
     t_seen = 0
 
-    # Post-commit recovery (giảm văng sau DONE)
+    AUTO_HEAD_MIN_MID = 10.0
+    AUTO_HEAD_MIN_FAR = 8.0
+    AUTO_STEER_VOTE = 3.0
+    AUTO_TIMER = 18
+
+    AUTO_MAX_ABS_STEER = 10
+
     recover_timer = 0
     RECOVER_FRAMES = 10
     RECOVER_STEER_CLAMP = 3
     RECOVER_SPEED_MAX = 24
 
-    fork_cooldown = 0
-    FORK_COOLDOWN_FRAMES = 45   # ~0.75s @60FPS
-
     try:
-        with AVClient(host=args.host, port=args.port,
-                      timeout=args.timeout) as client:
+        with AVClient(host=args.host, port=args.port, timeout=args.timeout) as client:
             print("[INFO] Starting main loop. Press 'q' to exit.\n")
 
             while True:
-                # ======================
-                # 1. GET DATA
-                # ======================
+                # GET DATA
                 _state = client.get_state_data()
                 raw_image = client.get_raw_image()
                 segmented_image = client.get_segmented_image()
                 h, w = segmented_image.shape[:2]
 
-                # ======================
-                # 2. COMMON LANE MASK
-                # ======================
+                # COMMON LANE MASK
                 LOWER = np.array([240, 10, 165], np.uint8)
                 UPPER = np.array([255, 35, 195], np.uint8)
 
                 mask = cv2.inRange(segmented_image, LOWER, UPPER)
-                mask = cv2.morphologyEx(
-                    mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)
-                )
-                mask = cv2.morphologyEx(
-                    mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)
-                )
+                mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
 
-                # ======================
-                # 3. SPEED PLANNER
-                # ======================
+                # SPEED PLANNER
                 speed_cmd = 30
-                steer_preview, _ = calculate_steering_angle(
-                    segmented_image, speed_cmd
-                )
+                steer_preview, _ = calculate_steering_angle(segmented_image, speed_cmd)
                 a = abs(steer_preview)
 
                 if a < 5:
@@ -817,17 +729,11 @@ def main():
                 else:
                     speed_cmd = 12
 
-                # ======================
-                # 4. LANE FOLLOW
-                # ======================
-                steer_lane, vis = calculate_steering_angle(
-                    segmented_image, speed_cmd
-                )
+                # LANE FOLLOW
+                steer_lane, vis = calculate_steering_angle(segmented_image, speed_cmd)
                 steer_hist.append(float(steer_lane))
 
-                # ======================
-                # 5. SIGN → INTENT HOLD
-                # ======================
+                # SIGN → INTENT HOLD
                 sign = detect_sign(segmented_image)
 
                 if sign in ("LEFT", "RIGHT"):
@@ -838,9 +744,7 @@ def main():
                     if sign_hold == 0 and fork_state == "IDLE":
                         fork_intent = "NONE"
 
-                # ======================
-                # 6. INTERSECTION GATE (still for sign-based)
-                # ======================
+                # INTERSECTION GATE
                 near_inter, inter_area = is_near_intersection(segmented_image)
 
                 if near_inter:
@@ -855,29 +759,17 @@ def main():
 
                 near_gate = (near_inter or inter_hold > 0)
 
-                # ======================
-                # 7. OPENING + GEOMETRY
-                # ======================
+                # OPENING + GEOMETRY
                 left_open, left_area = lane_available(mask, "LEFT", h, w)
                 right_open, right_area = lane_available(mask, "RIGHT", h, w)
-                straight_open, straight_area = lane_available(
-                    mask, "STRAIGHT", h, w
-                )
+                straight_open, straight_area = lane_available(mask, "STRAIGHT", h, w)
 
                 fork_mid_ok, fork_mid_heading = detect_fork(segmented_image)
-                fork_far_ok, fork_far_heading = detect_fork_early(
-                    segmented_image
-                )
+                fork_far_ok, fork_far_heading = detect_fork_early(segmented_image)
 
-                # ======================
-                # STEP 1: T-JUNCTION DETECTOR (NO SIGN)
-                # ======================
-                # T-junction: phía trước (straight) gần như mất,
-                # nhưng bên trái/phải mở
-                is_t_junction = (
-                    (straight_area <= T_STRAIGHT_MAX)
-                    and ((left_area >= T_SIDE_MIN)
-                         or (right_area >= T_SIDE_MIN))
+                # T-JUNCTION DETECTOR
+                is_t_junction = (straight_area <= T_STRAIGHT_MAX) and (
+                    (left_area >= T_SIDE_MIN) or (right_area >= T_SIDE_MIN)
                 )
 
                 if is_t_junction:
@@ -885,30 +777,22 @@ def main():
                 else:
                     t_seen = max(t_seen - 1, 0)
 
-                # ======================
-                # 8. FORK STATE MACHINE
-                # ======================
+                # FORK STATE MACHINE
                 if fork_state == "IDLE":
                     prepare_cnt = 0
                     inter_lost = 0
 
-                    # ===== AUTO-FORK (NO SIGN) =====
+                    # AUTO-FORK (NO SIGN)
                     if fork_intent == "NONE":
-                        # Chỉ khi đang ở gần intersection
-                        # (đã thấy ít nhất 2 frame)
-                        if inter_seen >= 1 and near_gate:
-                            # Ngã 3 chữ T: đường thẳng gần như đóng
+                        if inter_seen >= 2 and near_gate:
                             T_STRAIGHT_MAX = 250
                             SIDE_STRONG = 700
                             SIDE_DOMINATE = 2.5
 
-                            straight_open, straight_area = lane_available(
-                                mask, "STRAIGHT", h, w
-                            )
+                            straight_open, straight_area = lane_available(mask, "STRAIGHT", h, w)
 
                             is_T = (straight_area <= T_STRAIGHT_MAX)
 
-                            # Ưu tiên nhánh nào "thắng" rõ
                             left_strong = (left_area >= SIDE_STRONG)
                             right_strong = (right_area >= SIDE_STRONG)
 
@@ -920,23 +804,15 @@ def main():
                                     fork_state = "COMMIT"
                                     fork_intent = "LEFT"
                                     fork_timer = 14
-                                    print(
-                                        f"[FORK] AUTO COMMIT LEFT (T-junction, "
-                                        f"L={left_area}, R={right_area}, "
-                                        f"S={straight_area})"
-                                    )
+                                    print(f"[FORK] AUTO COMMIT LEFT (T-junction, L={left_area}, R={right_area}, S={straight_area})")
 
                                 elif right_dom and right_open:
                                     fork_state = "COMMIT"
                                     fork_intent = "RIGHT"
                                     fork_timer = 14
-                                    print(
-                                        f"[FORK] AUTO COMMIT RIGHT (T-junction, "
-                                        f"L={left_area}, R={right_area}, "
-                                        f"S={straight_area})"
-                                    )
+                                    print(f"[FORK] AUTO COMMIT RIGHT (T-junction, L={left_area}, R={right_area}, S={straight_area})")
 
-                    # ===== SIGN-BASED PREPARE =====
+                    # SIGN-BASED PREPARE
                     if fork_state == "IDLE":
                         if fork_intent in ("LEFT", "RIGHT") and near_gate:
                             fork_state = "PREPARE"
@@ -968,52 +844,32 @@ def main():
                         prepare_min = 14
                     ready = (prepare_cnt >= prepare_min)
 
-                    # -------- LEFT --------
+                    # LEFT
                     if fork_intent == "LEFT":
                         if steer_lane <= LEFT_BLOCK_STEER:
-                            ok_geom = (
-                                fork_mid_ok
-                                and (fork_mid_heading <= FORK_LEFT_HEADING)
-                            )
-                            ok_open = (
-                                left_open
-                                and (left_area >= LEFT_STRONG_AREA)
-                            )
+                            ok_geom = fork_mid_ok and (fork_mid_heading <= FORK_LEFT_HEADING)
+                            ok_open = left_open and (left_area >= LEFT_STRONG_AREA)
 
                             if ready and ok_geom and ok_open:
                                 fork_state = "COMMIT"
                                 fork_timer = 24
-                                print(
-                                    f"[FORK] COMMIT LEFT (areaL={left_area}, "
-                                    f"heading={fork_mid_heading:+.1f})"
-                                )
+                                print(f"[FORK] COMMIT LEFT (areaL={left_area}, heading={fork_mid_heading:+.1f})")
 
-                    # -------- RIGHT --------
+                    # RIGHT
                     elif fork_intent == "RIGHT":
                         if steer_lane >= RIGHT_BLOCK_STEER:
-                            ok_geom = (
-                                fork_far_ok
-                                and (fork_far_heading >= FORK_RIGHT_HEADING)
-                            )
-                            ok_open = (
-                                right_open
-                                and (right_area >= RIGHT_STRONG_AREA)
-                            )
+                            ok_geom = fork_far_ok and (fork_far_heading >= FORK_RIGHT_HEADING)
+                            ok_open = right_open and (right_area >= RIGHT_STRONG_AREA)
                             very_open = (
-                                right_open
-                                and (right_area >= RIGHT_STRONG_AREA * 2)
-                                and (inter_area >= INTER_AREA_STRONG)
+                                right_open and (right_area >= RIGHT_STRONG_AREA * 2) and (inter_area >= INTER_AREA_STRONG)
                             )
 
                             bias_ok = (steer_lane >= 2)
-                            if ready and ((ok_geom and ok_open)
-                                          or (very_open and bias_ok)):
+                            if ready and ((ok_geom and ok_open) or (very_open and bias_ok)):
                                 fork_state = "COMMIT"
                                 fork_timer = 20
                                 print(
-                                    f"[FORK] COMMIT RIGHT "
-                                    f"(areaR={right_area}, "
-                                    f"heading={fork_far_heading:+.1f}, "
+                                    f"[FORK] COMMIT RIGHT (areaR={right_area}, heading={fork_far_heading:+.1f}, "
                                     f"geom={ok_geom}, very_open={very_open})"
                                 )
 
@@ -1025,18 +881,22 @@ def main():
                         sign_hold = 0
                         prepare_cnt = 0
                         inter_lost = 0
-                        fork_cooldown = FORK_COOLDOWN_FRAMES
+                        steer_hist.clear()
+                        t_seen = 0
+
+                        if hasattr(calculate_steering_angle, "_prev_steer"):
+                            calculate_steering_angle._prev_steer = 0.0
+                            calculate_steering_angle._corner_frames = 0
+                            calculate_steering_angle._straight_count = 0
+
+                        recover_timer = RECOVER_FRAMES
                         print("[FORK] DONE")
 
-                # ======================
-                # 9. PRE-BIAS RIGHT (NHẸ)
-                # ======================
+                # PRE-BIAS RIGHT
                 if fork_state == "PREPARE" and fork_intent == "RIGHT":
                     steer_lane = max(steer_lane, +1)
 
-                # ======================
-                # 10. CONTROL MERGE
-                # ======================
+                # CONTROL MERGE
                 if fork_state == "COMMIT":
                     speed_cmd, steer_cmd = apply_turn_control(
                         fork_intent,
@@ -1048,28 +908,17 @@ def main():
                 else:
                     steer_cmd = steer_lane
 
-                # post-commit recovery clamp
+                # Post-commit recovery clamp
                 if recover_timer > 0 and fork_state == "IDLE":
                     recover_timer -= 1
                     speed_cmd = min(speed_cmd, RECOVER_SPEED_MAX)
-                    steer_cmd = int(
-                        np.clip(steer_cmd,
-                                -RECOVER_STEER_CLAMP,
-                                RECOVER_STEER_CLAMP)
-                    )
+                    steer_cmd = int(np.clip(steer_cmd, -RECOVER_STEER_CLAMP, RECOVER_STEER_CLAMP))
 
-                # ======================
-                # 11. SEND CONTROL
-                # ======================
-                print(
-                    f"[CONTROL] speed={speed_cmd}, steer={steer_cmd}, "
-                    f"sign={sign}, fork={fork_state}"
-                )
+                # SEND CONTROL
+                print(f"[CONTROL] speed={speed_cmd}, steer={steer_cmd}, sign={sign}, fork={fork_state}")
                 client.set_control(speed=speed_cmd, angle=steer_cmd)
 
-                # ======================
-                # 12. DEBUG
-                # ======================
+                # DEBUG
                 cv2.imshow("Raw Camera", raw_image)
                 cv2.imshow("Lane + Steering", vis)
 
